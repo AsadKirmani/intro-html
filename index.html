@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Waveform UI</title>
+    <style>
+        body {
+            background-color: #1a1a1a;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            color: white;
+            font-family: sans-serif;
+        }
+        .recorder-container {
+            background: #222;
+            padding: 30px;
+            border-radius: 24px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            text-align: center;
+        }
+        canvas {
+            width: 300px;
+            height: 100px;
+            display: block;
+            margin-bottom: 20px;
+        }
+        button {
+            background: #ff473e;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 50px;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="recorder-container">
+        <canvas id="waveformCanvas" width="300" height="100"></canvas>
+        <button id="startBtn">Start Recording</button>
+    </div>
+
+    <!-- JavaScript nichhe diya gaya hai -->
+    <script>
+    const canvas = document.getElementById('waveformCanvas');
+    const ctx = canvas.getContext('2d');
+    const startBtn = document.getElementById('startBtn');
+
+    let audioContext, analyser, dataArray;
+    
+    // Waveform bars ki history store karne ke liye array
+    const totalBars = 50; 
+    const barHistory = new Array(totalBars).fill(0); 
+
+    async function startRecording() {
+        try {
+            // 1. Microphone access lena
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            
+            // 2. Web Audio API setup
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            const source = audioContext.createMediaStreamSource(stream);
+            
+            source.connect(analyser);
+            analyser.fftSize = 256; 
+            const bufferLength = analyser.frequencyBinCount;
+            dataArray = new Uint8Array(bufferLength);
+
+            startBtn.innerText = "Recording...";
+            startBtn.style.background = "#555";
+            
+            // Drawing loop start karna
+            drawWaveform();
+            
+        } catch (err) {
+            console.error("Microphone access denied!", err);
+            alert("Microphone permission chahiye!");
+        }
+    }
+
+    function drawWaveform() {
+        requestAnimationFrame(drawWaveform); // Continuous loop
+
+        // Time domain data (raw waveform) get karna
+        analyser.getByteTimeDomainData(dataArray);
+
+        // 3. Current Volume (Amplitude) Calculate karna using RMS (Root Mean Square)
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+            let val = (dataArray[i] - 128) / 128; // Normalize value between -1 and 1
+            sum += val * val;
+        }
+        let rms = Math.sqrt(sum / dataArray.length);
+        
+        // Volume ko canvas height ke hisaab se scale karna (Max bar height 80px)
+        let barHeight = rms * 400; 
+        if (barHeight < 2) barHeight = 2; // Minimum height for idle state
+        if (barHeight > 80) barHeight = 80; // Maximum height limit
+
+        // 4. Array update karna (purani value hatakar nayi dalna)
+        barHistory.shift(); 
+        barHistory.push(barHeight); 
+
+        // 5. Canvas par draw karna
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Center dotted line draw karna (optional, UI me halki si dikh rahi hai)
+        ctx.beginPath();
+        ctx.setLineDash([2, 4]);
+        ctx.moveTo(0, canvas.height / 2);
+        ctx.lineTo(canvas.width, canvas.height / 2);
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
+        ctx.stroke();
+        
+        // Bars draw karna
+        const barWidth = 3;
+        const gap = 3;
+        const centerY = canvas.height / 2;
+
+        for (let i = 0; i < barHistory.length; i++) {
+            const h = barHistory[i];
+            const x = i * (barWidth + gap);
+
+            // Styling: Left side fade effect aur right-most bar Orange
+            if (i === barHistory.length - 1) {
+                // Active trailing bar (Orange/Red)
+                ctx.fillStyle = '#ff473e'; 
+            } else {
+                // Fade effect (opacity based on index)
+                const alpha = (i / barHistory.length) * 0.8;
+                ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+            }
+
+            // Bar draw karna (center se upar aur niche)
+            ctx.fillRect(x, centerY - (h / 2), barWidth, h);
+        }
+    }
+
+    startBtn.addEventListener('click', () => {
+        if (!audioContext) {
+            startRecording();
+        }
+    });
+</script>
+
+
+</body>
+</html>
